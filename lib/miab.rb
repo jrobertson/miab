@@ -44,10 +44,14 @@ class Miab
         host, user = raw_host.split(/@/,2).reverse
         @host = host
         @results[host] = {}
-
-        @ssh = Net::SSH.start( host, user, password: password)
-        eval @scroll
-        @ssh.close
+        
+        begin
+          @ssh = Net::SSH.start( host, user, password: password)
+          eval @scroll
+          @ssh.close
+        rescue
+          @results[host] = nil
+        end
         
       end
 
@@ -101,6 +105,18 @@ class Miab
 
   alias df disk_space
 
+  def memory()
+
+    instructions = 'free -h'
+
+    puts ('instructions: ' + instructions.inspect).debug if @debug
+    r = @ssh ? @ssh.exec!(instructions) : system(instructions)
+    puts ('memory: ' + r.inspect).debug if @debug
+    a = r.lines
+    total, used, avail = a[1].split.values_at(1,2,-1)    
+    @results[@host][:memory] = {total: total, used: used, available: avail}
+
+  end
 
   def pwd()
     instructions = 'pwd'
@@ -115,4 +131,3 @@ class Miab
   end
 
 end
-
