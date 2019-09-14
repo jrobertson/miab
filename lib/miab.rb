@@ -7,6 +7,7 @@
 
 require 'net/ssh'
 require 'c32'
+require 'resolve/hostname'
 
 
 class Miab
@@ -35,6 +36,8 @@ class Miab
     end
   end
 
+  # cast out the thing and hope for the best
+  #
   def cast()
 
     if @nodes.any? then
@@ -64,6 +67,8 @@ class Miab
     @results
   end
 
+  # return the local date and time
+  #
   def date()
 
     instructions = 'date'
@@ -72,6 +77,8 @@ class Miab
 
   end
 
+  # query the available disk space etc.
+  #
   def disk_space()
 
     instructions = 'df -h'
@@ -105,6 +112,8 @@ class Miab
 
   alias df disk_space
 
+  # find out available memory etc
+  #
   def memory()
 
     instructions = 'free -h'
@@ -117,17 +126,66 @@ class Miab
     @results[@host][:memory] = {total: total, used: used, available: avail}
 
   end
+  
+  # query the ping time
+  #
+  def ping()
 
+    resolver = Resolve::Hostname.new
+    ip = resolver.getaddress(@host)
+    puts ('ip: ' + ip.inspect).debug if @debug
+    valid = pingecho(ip)
+    puts ('valid: ' + valid.inspect).debug if @debug    
+    
+    @results[@host][:ping] = if valid then
+      a = [valid]
+      4.times {sleep 0.01; a << pingecho(ip)}
+      (a.min * 1000).round(3)
+    else
+      nil
+    end
+
+  end
+
+  # query the path of the current working directory
+  #
   def pwd()
     instructions = 'pwd'
     r = @ssh ? @ssh.exec!(instructions) : system(instructions)
     @results[@host][:pwd] = r.chomp
   end
 
+  # query the CPU temperature
+  #
   def temperature()
     instructions = 'cat /sys/class/thermal/thermal_zone0/temp'
     r = @ssh ? @ssh.exec!(instructions) : system(instructions)
     @results[@host][:temperature] = r.chomp
   end
+  
+  private
+  
+  
+  def pingecho(host, timeout=5, service="echo")
+
+    elapsed = nil
+    time = Time.new
+
+    begin
+
+      Timeout.timeout(timeout) do
+        s = TCPSocket.new(host, service)
+        s.close
+      end
+
+    rescue Errno::ECONNREFUSED
+      return Time.now - time
+    rescue Timeout::Error, StandardError
+      return false
+    end
+    
+    # it should not reach this far
+    return true
+  end  
 
 end
