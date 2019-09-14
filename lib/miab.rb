@@ -7,7 +7,7 @@
 
 require 'net/ssh'
 require 'c32'
-require 'resolve/hostname'
+require 'resolv'
 
 
 class Miab
@@ -131,8 +131,7 @@ class Miab
   #
   def ping()
 
-    resolver = Resolve::Hostname.new
-    ip = resolver.getaddress(@host)
+    ip = Resolv.getaddress(@host)
     puts ('ip: ' + ip.inspect).debug if @debug
     valid = pingecho(ip)
     puts ('valid: ' + valid.inspect).debug if @debug    
