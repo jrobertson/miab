@@ -47,7 +47,7 @@ class Miab
 
       @results[:disk_usage] = {}
 
-      a = s.lines.grep(/\/dev\/root/)
+      a = r.lines.grep(/\/dev\/root/)
 
       puts ('a: ' + a.inspect).debug if @debug
 
@@ -58,7 +58,7 @@ class Miab
           avail: avail}
       end
 
-      a2 = s.lines.grep(/\/dev\/sda1/)
+      a2 = r.lines.grep(/\/dev\/sda1/)
 
       puts ('a2: ' + a2.inspect).debug if @debug
 
