@@ -1,6 +1,6 @@
 Gem::Specification.new do |s|
   s.name = 'miab'
-  s.version = '0.2.1'
+  s.version = '0.3.0'
   s.summary = 'Message in a bottle (MIAB) is designed to execute remote ' +
       'commands through SSH for system maintenance purposes.'
   s.authors = ['James Robertson']
