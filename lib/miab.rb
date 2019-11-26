@@ -4,19 +4,45 @@
 
 # Desc: Message in a bottle (MIAB) is designed to execute remote commands 
 #       through SSH for system maintenance purposes.
+#
+#       Note: Intended for a Debian based distro
 
 require 'net/ssh'
 require 'c32'
 require 'resolv'
 
 
+# available commands:
+#
+# * date - returns the system date and time
+# * directory_exists? - returns true if the directory exists
+# * disk_space - returns the available disk space
+# * echo - returns whatever string is passed in
+# * file_exists? - returns true if the file exists
+# * file_write - writes contents to a file
+# * installable? - returns true if the package name exists in apt-cache search
+# * installed? - returns true if a package is already installed
+# * internet? - returns true if a ping request to an external IP address succeeds
+# * memory - returns the amount of free RAM available etc
+# * ping - returns the latency of a ping request to the node
+# * pwd - returns the working directory
+# * temperature - returns the temperature of the CPU
+
+# usage: puts Miab.new("temperature", domain: 'home', target: 'angelo', 
+#                       user: 'pi', password: 'secret').cast
+# nearest SSH equivalent `ssh pi@angelo.home exec \
+#                                 "cat /sys/class/thermal/thermal_zone0/temp"`
+
 class Miab
   using ColouredText
   
   class Session
     
-    def initialize( host, ssh=nil, debug: false)
-      @ssh, @host, @debug = ssh, host, debug
+    def initialize( host, ssh=nil, debug: false, dns: '1.1.1.1')
+      
+      @ssh, @host, @debug, @dns = ssh, host, debug, dns
+      
+      puts 'Session dns: ' + dns.inspect if @debug
       @results = {}
     end
     
@@ -37,6 +63,18 @@ class Miab
       @results[:date] = r.chomp
 
     end
+    
+    def directory_exists?(file)
+      
+      instructions = "test -d #{file}; echo $?"
+      r = @ssh ? @ssh.exec!(instructions) : `#{instructions}`
+      puts 'r: ' + r.inspect if @debug
+      
+      @results[:directory_exists?] = r.chomp == '0'
+
+    end
+    
+    alias dir_exists? directory_exists?
 
     # query the available disk space etc.
     #
@@ -72,6 +110,85 @@ class Miab
     end
 
     alias df disk_space
+    
+    # return the string supplied
+    #
+    def echo(s)
+
+      instructions = 'echo ' + s
+      r = @ssh ? @ssh.exec!(instructions) : `#{instructions}`
+      puts 'r: ' + r.inspect if @debug
+      @results[:echo] = r.chomp
+
+    end
+    
+    def file_exists?(file)
+      
+      instructions = "test -f #{file}; echo $?"
+      r = @ssh ? @ssh.exec!(instructions) : `#{instructions}`
+      puts 'r: ' + r.inspect if @debug
+      
+      @results[:file_exists?] = r == 0 
+
+    end     
+    
+    # e.g. file_write 'desc.txt', 'Controls the door entry system.'
+    #
+    def file_write(file, content)
+      
+      instructions = "echo #{content.inspect} >> #{file}"
+      r = @ssh ? @ssh.exec!(instructions) : `#{instructions}`
+      puts 'r: ' + r.inspect if @debug
+      
+      @results[:file_write] = r
+
+    end        
+    
+    # return the string supplied
+    #
+    def install(package)
+
+      return @results[:install] = 'no route to internet' unless internet?
+      return @results[:install] = 'already installed' if installed? package
+      
+      instructions = "apt-get update && apt-get install  #{package} -y"
+      r = @ssh ? @ssh.exec!(instructions) : `#{instructions}`
+      puts 'r: ' + r.inspect if @debug
+      @results[:install] = r.chomp
+
+    end    
+    
+    def installable?(package)
+      
+      instructions = "apt-cache search --names-only ^#{package}$"
+      results = @ssh ? @ssh.exec!(instructions) : `#{instructions}`
+      puts 'results: ' + results.inspect if @debug
+      
+      @results[:installable?] = !results.empty? 
+
+    end    
+    
+    def installed?(package)
+      
+      instructions = 'dpkg --get-selections | grep -i ' + package
+      results = @ssh ? @ssh.exec!(instructions) : `#{instructions}`
+      puts 'results: ' + results.inspect if @debug
+      
+      return @results[:installed?] = nil if results.empty?
+      r = results.lines.grep /^#{package}/
+      
+      @results[:installed?] = r.any?
+    end
+
+    def internet?()
+      
+      instructions = "ping #{@dns} -W 1 -c 1"
+      r = @ssh ? @ssh.exec!(instructions) : `#{instructions}`
+      puts 'r: ' + r.inspect if @debug
+      
+      @results[:internet?] = r.lines[1][/icmp_seq/] ? true : false
+
+    end    
 
     # find out available memory etc
     #
@@ -152,11 +269,13 @@ class Miab
   end
 
   def initialize(scroll, domain: nil, target: nil, pwlist: {}, password: nil, 
-    user: nil, debug: false)
+    user: nil, debug: false, dns: '208.67.222.222')
 
     @results = {}
 
-    @scroll, @debug = scroll, debug
+    @scroll, @debug, @dns = scroll, debug, dns
+    
+    puts '@dns: ' + @dns.inspect if @debug
 
     @nodes = if target then
 
@@ -181,6 +300,7 @@ class Miab
     if @nodes.any? then
       
       threads = []
+      dns = @dns
 
       @nodes.each do |raw_host, password|
         
@@ -191,7 +311,7 @@ class Miab
           begin
             puts ('host: ' + host.inspect).debug if @debug
             ssh = Net::SSH.start( host, user, password: password)
-            @results[host] = Session.new(host, ssh, debug: @debug).exec @scroll
+            @results[host] = Session.new(host, ssh, dns: dns, debug: @debug).exec @scroll
             ssh.close
             puts (host + ' result: ' + @results[host].inspect).debug if @debug
           rescue
@@ -207,7 +327,7 @@ class Miab
       
       if @scroll then
         host = `hostname`.chomp
-        @results[host] = Session.new(host, debug: @debug).exec(@scroll)
+        @results[host] = Session.new(host, dns: @dns, debug: @debug).exec(@scroll)
       end
       
     end
