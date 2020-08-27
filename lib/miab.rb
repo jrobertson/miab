@@ -14,6 +14,7 @@ require 'resolv'
 
 # available commands:
 #
+# * backup - initiates rsync on the remote machine to be backed up
 # * date - returns the system date and time
 # * directory_exists? - returns true if the directory exists
 # * disk_space - returns the available disk space
@@ -52,6 +53,31 @@ class Miab
     end
     
     protected
+    
+    # backup 
+    # e.g. from: /mnt/usbdisk/gem_src/.
+    #      to: pi@192.168.4.158:backup2020/gem_src/.
+    #
+    def backup(from: nil, to: nil)
+
+      if @debug then
+        puts 'ready to perform backup' 
+        puts "from: %s to: %s" % [from, to]
+      end
+      
+      instructions  = "rsync -akL -e ssh %s %s" % [from, to]
+
+      puts 'instructions: ' + instructions if @debug      
+      
+      # note: compression is not enabled since this is aimed at 
+      #       single board computers which have limited CPU capability
+
+      r = @ssh ? @ssh.exec!(instructions) : `#{instructions}`
+      puts 'r: ' + r.inspect if @debug
+      
+      # since it's running in the background, an empty string will be returned
+      
+    end
     
     # return the local date and time
     #
@@ -121,6 +147,15 @@ class Miab
       @results[:echo] = r.chomp
 
     end
+    
+    def exec_success?(instruction, expected)
+      
+      r = @ssh ? @ssh.exec!(instruction) : `#{instruction}`
+      puts 'r: ' + r.inspect if @debug
+      
+      @results[:exec_success?] = (r =~ /#{expected}/ ? true : r)
+
+    end  
     
     def file_exists?(file)
       
@@ -276,6 +311,8 @@ class Miab
     @scroll, @debug, @dns = scroll, debug, dns
     
     puts '@dns: ' + @dns.inspect if @debug
+    
+    target = [target] if target.is_a? String
 
     @nodes = if target then
 
